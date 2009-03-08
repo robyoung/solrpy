@@ -525,7 +525,7 @@ class TestDocumentsDeletion(unittest.TestCase):
                 "Document (id:%s) should've been added to index" % id)
 
         # Delete documents by their ID and commit changes
-        self.conn.delete_many(ids)
+        self.conn.delete(ids)
         self.conn.commit()
 
         # Make sure they've been deleted

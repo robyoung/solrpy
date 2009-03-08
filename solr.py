@@ -541,13 +541,17 @@ class SolrConnection:
         """
         Delete a specific document by id.
         """
-        xstr = u'<delete><id>%s</id></delete>' % escape(unicode(id))
-        return self._update(xstr)
+        if isinstance(id, (list, tuple)):
+            [self.delete(an_id) for an_id in id]
+        else:
+            xstr = u'<delete><id>%s</id></delete>' % escape(unicode(id))
+            return self._update(xstr)
 
     def delete_many(self, ids):
         """
         Delete documents using a list of IDs.
         """
+        warnings.warn("delete_many() is deprecated, lists of ids can now be passed to delete()", category=DeprecationWarning)
         [self.delete(id) for id in ids]
 
     def delete_query(self, query):
