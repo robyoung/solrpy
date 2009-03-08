@@ -568,7 +568,7 @@ class SolrConnection:
             document.add(id="thirddoc", auther=["you", "me", "dupree"])
             connection.add(document)
         """
-        if isinstance(_commit, Document):
+        if not isinstance(_commit, bool):
             documents = documents + tuple([_commit])
             _commit = False
 
@@ -694,7 +694,12 @@ class SolrConnection:
     
     def __add_documents(self, lst, documents):
         for document in documents:
-            self.__add_fields(lst, document)
+            if isinstance(document, (list, tuple)):
+                self.__add_documents(lst, document)
+            elif isinstance(document, (dict, Document)):
+                self.__add_fields(lst, document)
+            else:
+                raise SolrException("Invalid document added %s"%document)
 
     def __make_field(self, name, value):
         if isinstance(value, Field):

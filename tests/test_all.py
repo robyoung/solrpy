@@ -187,7 +187,7 @@ class TestAddingDocuments(unittest.TestCase):
         documents = [dict(user_id=user_ids[x], data=data[x], id=ids[x])
                         for x in range(doc_count)]
 
-        self.conn.add_many(documents)
+        self.conn.add(documents)
         self.conn.commit()
 
         results = []
@@ -235,7 +235,7 @@ class TestAddingDocuments(unittest.TestCase):
             doc['id'] = ids[x]
             documents.append(doc)
 
-        self.conn.add_many(documents)
+        self.conn.add(documents)
         self.conn.commit()
 
         results = []
