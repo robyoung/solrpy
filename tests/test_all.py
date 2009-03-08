@@ -284,7 +284,7 @@ class TestAddingDocuments(unittest.TestCase):
                         for x in range(doc_count)]
 
         # Pass in the commit flag.
-        self.conn.add_many(documents, True)
+        self.conn.add(documents, True)
 
         results = []
         for id in ids:
@@ -313,7 +313,7 @@ class TestAddingDocuments(unittest.TestCase):
             documents.append(doc)
 
         # Pass in the commit flag.
-        self.conn.add_many(documents, True)
+        self.conn.add(documents, True)
 
         results = []
         for id in ids:
@@ -332,7 +332,7 @@ class TestAddingDocuments(unittest.TestCase):
         documents = [dict(user_id=user_ids[x], data=data[x], id=ids[x])
                         for x in range(doc_count)]
 
-        self.conn.add_many(documents)
+        self.conn.add(documents)
 
         for user_id in user_ids:
             results = self.conn.query("user_id:" + user_id).results
@@ -391,7 +391,7 @@ class TestAddingDocuments(unittest.TestCase):
         user_ids = [doc["user_id"] for doc in documents]
         ids = [doc["id"] for doc in documents]
 
-        self.conn.add_many(documents)
+        self.conn.add(documents)
         self.conn.commit()
 
         results = []

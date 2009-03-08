@@ -286,6 +286,7 @@ import urlparse
 import codecs
 import urllib
 import datetime
+import warnings
 from StringIO import StringIO
 from xml.sax import make_parser
 from xml.sax.handler import ContentHandler
@@ -569,8 +570,13 @@ class SolrConnection:
             connection.add(document)
         """
         if not isinstance(_commit, bool):
-            documents = documents + tuple([_commit])
-            _commit = False
+            documents = tuple([_commit]) + documents
+            # check if the commit flag has been passed at the end
+            if isinstance(documents[-1], bool):
+                _commit = documents[-1]
+                documents = tuple(documents[:-1])
+            else:
+                _commit = False
 
         lst = [u'<add>']
         self.__add_documents(lst, documents)
@@ -590,6 +596,7 @@ class SolrConnection:
         docs -- a list of dicts, where each dict is a document to add
             to SOLR.
         """
+        warnings.warn("add_many() is deprecated, lists of documents can now be passed to add()", category=DeprecationWarning)
         lst = [u'<add>']
         self.__add_documents(lst, docs)
         lst.append(u'</add>')
