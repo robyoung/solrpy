@@ -1188,6 +1188,13 @@ class TestDocument(unittest.TestCase):
         doc.add(field)
         
         self.assertEquals(doc['foo'][0], field, "Field should be set to document")
+
+    def test_add_returns_the_document(self):
+        doc   = Document()
+        field = Field(name='foo', value='value')
+        doc2  = doc.add(field)
+
+        self.assertEquals(doc, doc2, "Document.add() should return the document")
     
     def test_add_unnamed_field(self):
         doc   = Document()

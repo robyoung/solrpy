@@ -755,6 +755,8 @@ class Document(object):
         for name, value in keywords.items():
             self.__add_field(name, value)
 
+        return self
+
     def __add_field(self, name, value):
         if isinstance(value, Field):
             value.name = name
