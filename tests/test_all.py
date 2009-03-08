@@ -16,7 +16,7 @@ from random import choice
 from xml.dom.minidom import parseString
 
 # solrpy
-from solr import SolrConnection
+from solr import SolrConnection, Document, Field
 
 SOLR_PATH = "/solr"
 SOLR_HOST = "localhost"
@@ -89,6 +89,26 @@ class TestAddingDocuments(unittest.TestCase):
         doc = results[0]
         self.assertEquals(doc["user_id"], user_id)
         self.assertEquals(doc["data"], data)
+    
+    def test_add_one_document_object(self):
+        """Try to add one document object.
+        """
+        user_id = get_rand_string()
+        data = get_rand_string()
+        id = get_rand_string()
+        
+        doc = Document()
+        doc["user_id"] = user_id
+        doc["data"] = data
+        doc["id"] = id
+        
+        #raise Exception, doc.as_xml
+        self.conn.add(doc)
+        self.conn.commit()
+        results = self.conn.query("id:" + id).results
+        
+        self.assertEquals(len(results), 1,
+            "Could not find expected data (id:%s)" % id)
 
     def test_add_one_document_implicit_commit(self):
         """ Try to add one document and commit changes in one operation.
@@ -107,6 +127,30 @@ class TestAddingDocuments(unittest.TestCase):
 
         # Commit the changes
         self.conn.add(True, **doc)
+        results = self.conn.query("id:" + id).results
+
+        self.assertEquals(len(results), 1,
+            "Could not find expected data (id:%s)" % id)
+
+        doc = results[0]
+        self.assertEquals(doc["user_id"], user_id)
+        self.assertEquals(doc["data"], data)
+    
+    def test_add_one_document_object_implicit_commit(self):
+        """ Try to add one document object and commit changes in one operation
+        """
+        
+        user_id = get_rand_string()
+        data = get_rand_string()
+        id = get_rand_string()
+
+        doc = Document()
+        doc["user_id"] = user_id
+        doc["data"] = data
+        doc["id"] = id
+
+        # Commit the changes
+        self.conn.add(True, doc)
         results = self.conn.query("id:" + id).results
 
         self.assertEquals(len(results), 1,
@@ -175,6 +219,55 @@ class TestAddingDocuments(unittest.TestCase):
             "Data sets differ (difference:%s)" % (data_symdiff))
         self.assertEqual(ids_symdiff, set([]),
             "IDs sets differ (difference:%s)" % (ids_symdiff))
+    
+    def test_add_many_objects(self):
+        """ Try to add more than one document in a single operation.
+        """
+        doc_count = 10
+        user_ids = [get_rand_string() for x in range(doc_count)]
+        data =  [get_rand_string() for x in range(doc_count)]
+        ids =  [get_rand_string() for x in range(doc_count)]
+        documents = []
+        for x in range(doc_count):
+            doc = Document()
+            doc['user_id'] = user_ids[x]
+            doc['data'] = data[x]
+            doc['id'] = ids[x]
+            documents.append(doc)
+
+        self.conn.add_many(documents)
+        self.conn.commit()
+
+        results = []
+        for id in ids:
+            res = self.conn.query("id:" + id).results
+            if not res:
+                self.fail("Could not find document (id:%s)" % id)
+            results.append(res[0])
+
+        self.assertEquals(len(results), doc_count,
+            "Query didn't return all documents. Expected: %d, got: %d" % (
+                doc_count, len(results)))
+
+        query_user_ids = [doc["user_id"] for doc in results]
+        query_data = [doc["data"] for doc in results]
+        query_ids = [doc["id"] for doc in results]
+
+        # Symmetric difference will give us those documents which are neither
+        # in original list nor in a fetched one. It's a handy way to check
+        # whether all, and only those expected, documents have been returned.
+
+        user_ids_symdiff = set(user_ids) ^ set(query_user_ids)
+        data_symdiff = set(data) ^ set(query_data)
+        ids_symdiff = set(ids) ^ set(query_ids)
+
+        self.assertEqual(user_ids_symdiff, set([]),
+            "User IDs sets differ (difference:%s)" % (user_ids_symdiff))
+        self.assertEqual(data_symdiff, set([]),
+            "Data sets differ (difference:%s)" % (data_symdiff))
+        self.assertEqual(ids_symdiff, set([]),
+            "IDs sets differ (difference:%s)" % (ids_symdiff))
+
 
     def test_add_many_implicit_commit(self):
         """ Try to add more than one document and commit changes,
@@ -189,6 +282,35 @@ class TestAddingDocuments(unittest.TestCase):
         ids =  [get_rand_string() for x in range(doc_count)]
         documents = [dict(user_id=user_ids[x], data=data[x], id=ids[x])
                         for x in range(doc_count)]
+
+        # Pass in the commit flag.
+        self.conn.add_many(documents, True)
+
+        results = []
+        for id in ids:
+            res = self.conn.query("id:" + id).results
+            if not res:
+                self.fail("Could not find document (id:%s)" % id)
+            results.append(res[0])
+
+    def test_add_many_objects_implicit_commit(self):
+        """ Try to add more than one document and commit changes,
+        all in one operation.
+        """
+
+        # That one fails in r5 (<commit/> must be made on its own)
+
+        doc_count = 10
+        user_ids = [get_rand_string() for x in range(doc_count)]
+        data =  [get_rand_string() for x in range(doc_count)]
+        ids =  [get_rand_string() for x in range(doc_count)]
+        documents = []
+        for x in range(doc_count):
+            doc = Document()
+            doc['user_id'] = user_ids[x]
+            doc['data'] = data[x]
+            doc['id'] = ids[x]
+            documents.append(doc)
 
         # Pass in the commit flag.
         self.conn.add_many(documents, True)
@@ -974,6 +1096,163 @@ class TestResponse(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
+class TestField(unittest.TestCase):
+    def test_create(self):
+        field = Field('foo')
+        self.assertEquals(field.name, None, "Field name should be None")
+        self.assertEquals(field.value, 'foo', "Field value should be 'foo'")
+        
+        field = Field(name='foo', value='bar')
+        self.assertEquals(field.name, 'foo', "Field name should be 'foo'")
+        self.assertEquals(field.value, 'bar', "Field value should be 'bar'")
+        
+        field = Field('foo', boost=1.5)
+        self.assertEquals(field.name, None, "Field name should be None")
+        self.assertEquals(field.value, 'foo', "Field value should be 'foo'")
+        self.assertEquals(field.boost, 1.5, "Field boost should be 1.5")
+    
+    def test_creation_failure(self):
+        self.assertRaises(TypeError, Field, 'foo', boost=1)
+        self.assertRaises(ValueError, Field, None)
+        self.assertRaises(ValueError, Field, value=None)
+    
+    def test_set_name(self):
+        field = Field('foo')
+        try:
+            field.value = None
+            self.assertTrue(False, "Field value should not be set to None")
+        except ValueError:
+            self.assertTrue(True)
+    
+    def test_set_boost(self):
+        field = Field('foo')
+        try:
+            field.boost = 1
+            self.assertTrue(False, "Field boost should only be a float")
+        except TypeError:
+            self.assertTrue(True)
+    
+    def test_as_xml(self):
+        field = Field('foo')
+        try:
+            field.as_xml
+            self.assertTrue(False, "Should not be able to convert to XML without name")
+        except AttributeError:
+            self.assertTrue(True)
+        
+        field = Field(name='foo', value='bar')
+        self.assertEquals(field.as_xml, u'<field name="foo">bar</field>')
+        
+        field = Field(name='foo', value='bar', boost=1.5)
+        self.assertEquals(field.as_xml, u'<field name="foo" boost="1.5">bar</field>')
+    
+    def test_equality(self):
+        field1 = Field(name='foo', value='bar', boost=1.5)
+        field2 = Field('bar')
+        field2.name  = 'foo'
+        field2.boost = 1.5
+        field3 = Field(name='bar', value='foo')
+        
+        self.assertEquals(field1, field2, "Both fields should be equal")
+        self.assertNotEquals(field1, field3, "Fields should not be equal")
+    
+    def test_date(self):
+        field = Field(name='creation_time', value=datetime.date(1969, 5, 28))
+        self.assertEqual(field.as_xml, u'<field name="creation_time">1969-05-28T00:00:00Z</field>')
+
+class TestDocument(unittest.TestCase):
+    def test_creation(self):
+        doc = Document()
+        self.assertEquals(doc.boost, None, "Boost should default to None")
+        
+        doc = Document(1.5)
+        self.assertEquals(doc.boost, 1.5, "Boost should be 1.5")
+        
+        doc = Document(boost=1.5)
+        self.assertEquals(doc.boost, 1.5, "Boost should be 1.5")
+    
+    def test_creation_failure(self):
+        self.assertRaises(TypeError, Document, boost=1)
+    
+    def test_set_boost(self):
+        doc = Document()
+        try:
+            doc.boost = 1
+            self.assertTrue(False, "Setting boost to non-float should fail")
+        except TypeError:
+            self.assertTrue(True)
+    
+    def test_add_field(self):
+        doc   = Document()
+        field = Field(name='foo', value='value')
+        doc.add(field)
+        
+        self.assertEquals(doc['foo'][0], field, "Field should be set to document")
+    
+    def test_add_unnamed_field(self):
+        doc   = Document()
+        field = Field('bar')
+        doc.add(foo=field)
+        
+        self.assertEquals(doc['foo'][0], field, "Field should be set to document")
+    
+    def test_add_multiple_unnamed_fields(self):
+        doc    = Document()
+        field1 = Field('foo')
+        field2 = Field('bar')
+        doc.add(foo=[field1, field2])
+        
+        self.assertEquals(doc['foo'][0], field1, "Field one should be set to document")
+        self.assertEquals(doc['foo'][1], field2, "Field two should be set to document")
+    
+    def test_add_multiple_fields(self):
+        doc    = Document()
+        field1 = Field(name='foo', value='bar')
+        field2 = Field(name='bar', value='foo')
+        doc.add(field1, field2)
+        
+        self.assertEquals(doc['foo'][0], field1, "Field one should be set to document")
+        self.assertEquals(doc['bar'][0], field2, "Field two should be set to document")
+    
+    def test_as_xml(self):
+        doc = Document(1.5)
+        doc.add(Field(name='foo', value='bar'))
+        doc.add(doo=[Field('bar1'), Field('bar2')])
+        
+        self.assertEquals(doc.as_xml, u'<doc boost="1.5"><field name="foo">bar</field><field name="doo">bar1</field><field name="doo">bar2</field></doc>')
+    
+    def test_len(self):
+        doc = Document()
+        doc.add(foo='bar')
+        self.assertEquals(len(doc), 1)
+        doc.add(bar='foo')
+        self.assertEquals(len(doc), 2)
+        doc.add(foo='bar2')
+        self.assertEquals(len(doc), 3)
+    
+    def test_getitem(self):
+        doc = Document()
+        doc.add(foo='bar')
+        
+        self.assertEquals(doc['foo'], [Field(name='foo', value='bar')])
+    
+    def test_setitem(self):
+        doc = Document()
+        doc.add(foo='bar')
+        
+        doc['foo'] = 'baz'
+        self.assertEquals(doc['foo'][0].value, 'baz')
+    
+    def test_delitem(self):
+        doc = Document()
+        doc.add(foo='bar')
+        
+        del doc['foo']
+        try:
+            doc['foo']
+            self.assertTrue(False, "No key should be found")
+        except KeyError:
+            self.assertTrue(True)
 
 if __name__ == "__main__":
     unittest.main()

@@ -556,16 +556,25 @@ class SolrConnection:
         xstr = u'<delete><query>%s</query></delete>' % escape(query)
         return self._update(xstr)
 
-    def add(self, _commit=False, **fields):
+    def add(self, _commit=False, *documents, **fields):
         """
         Add a document to the SOLR server.  Document fields
         should be specified as arguments to this function
 
         Example:
             connection.add(id="mydoc", author="Me")
+            connection.add(id="otherdoc", auther=["you", Field("me", boost=1.5)]
+            document = Document(boost=1.5)
+            document.add(id="thirddoc", auther=["you", "me", "dupree"])
+            connection.add(document)
         """
+        if isinstance(_commit, Document):
+            documents = documents + tuple([_commit])
+            _commit = False
+
         lst = [u'<add>']
-        self.__add(lst, fields)
+        self.__add_documents(lst, documents)
+        self.__add_fields(lst, fields)
         lst.append(u'</add>')
         xstr = ''.join(lst)
         if not _commit:
@@ -582,8 +591,7 @@ class SolrConnection:
             to SOLR.
         """
         lst = [u'<add>']
-        for doc in docs:
-            self.__add(lst, doc)
+        self.__add_documents(lst, docs)
         lst.append(u'</add>')
         xstr = ''.join(lst)
         if not _commit:
@@ -668,32 +676,32 @@ class SolrConnection:
                 raise SolrException(rsp.status, reason)
         return data
 
-    def __add(self, lst, fields):
-        lst.append(u'<doc>')
-        for field, value in fields.items():
-            # Handle multi-valued fields if values
-            # is passed in as a list/tuple
-            if not isinstance(value, (list, tuple)):
-                values = [value]
-            else:
-                values = value
-
-            for value in values:
-                # ignore values that are not defined
-                if value == None:
+    def __add_fields(self, lst, fields):
+        if isinstance(fields, Document):
+            lst.append(fields.as_xml)
+        elif fields:
+            document = Document()
+            for name, value in fields.items():
+                try:
+                    if isinstance(value, (list, tuple)):
+                        for multi_value in value:
+                            document.add(self.__make_field(name, multi_value))
+                    else:
+                        document.add(self.__make_field(name, value))
+                except ValueError:
                     continue
-                # Do some basic data conversion
-                if isinstance(value, datetime.date):
-                    value = datetime.datetime.combine(value, datetime.time(tzinfo=UTC()))
-                if isinstance(value, datetime.datetime):
-                    value = utc_to_string(value)
-                elif isinstance(value, bool):
-                    value = value and 'true' or 'false'
+            lst.append(document.as_xml)
+    
+    def __add_documents(self, lst, documents):
+        for document in documents:
+            self.__add_fields(lst, document)
 
-                lst.append('<field name=%s>%s</field>' % (
-                    (quoteattr(field),
-                    escape(unicode(value)))))
-        lst.append('</doc>')
+    def __make_field(self, name, value):
+        if isinstance(value, Field):
+            value.name = name
+            return value
+        else:
+            return Field(name=name, value=value)
 
     def __repr__(self):
         return ('<SolrConnection (url=%s, '
@@ -723,6 +731,117 @@ class SolrConnection:
                 if not attempts:
                     raise
 
+# ===================================================================
+# Document and Field classes
+# ===================================================================
+class Document(object):
+    """
+    A class to represent a Solr document
+
+    usage:
+    document = Document(boost=1.5)
+    document.add(uid='uid001', title=Field('a test title', boost=1.5), multis=['a basic field', Field('boosted field', boost=1.5)])
+    """
+    def __init__(self, boost=None):
+        self.boost  = boost
+        self.__fields = {}
+
+    def add(self, *parameters, **keywords):
+        for field in parameters:
+            if not isinstance(field, Field):
+                raise ValueError("Can only add Document objects")
+            self.__add_field(field.name, field)
+
+        for name, value in keywords.items():
+            self.__add_field(name, value)
+
+    def __add_field(self, name, value):
+        if isinstance(value, Field):
+            value.name = name
+            self.__fields.setdefault(value.name, []).append(value)
+        elif isinstance(value, (list, tuple)):
+            for value_one in value:
+                self.__add_field(name, value_one)
+        else:
+            self.__add_field(name, Field(name=name, value=value))
+
+    def __getattr__(self, name):
+        if name == 'as_xml':
+            if self.boost:
+                boost = u' boost=%s' % quoteattr(str(self.boost))
+            else:
+                boost = u''
+            fields = reduce(lambda x, y: x + y, self.__fields.values(), [])
+            return u'<doc%s>%s</doc>' % (boost, "".join([field.as_xml for field in fields]))
+        raise AttributeError("'Document' object has no attribute '%s'" % name)
+    
+    def __setattr__(self, name, value):
+        if name == 'boost':
+            if value and not isinstance(value, float):
+                raise TypeError("Expecting a float for boost")
+        object.__setattr__(self, name, value)
+
+    def __len__(self):
+        return sum([len(fields) for fields in self.__fields.values()])
+
+    def __getitem__(self, key):
+        return self.__fields[key]
+
+    def __setitem__(self, key, value):
+        if key in self.__fields:
+            del self.__fields[key]
+        self.__add_field(key, value)
+
+    def __delitem__(self, key):
+        del self.__fields[key]
+
+class Field(object):
+    """
+    A class to represent a Solr field
+
+    usage:
+    document = Document(boost=1.5)
+    document.add(uid='uid001', title=Field('a test title', boost=1.5), multis=['a basic field', Field('boosted field', boost=1.5)])
+    """
+    def __init__(self, value, name=None, boost=None):
+        self.name  = name
+        self.value = value
+        self.boost = boost
+
+    def __getattr__(self, name):
+        if name == 'as_xml':
+            value  = self.value
+            if isinstance(value, datetime.date):
+                value = datetime.datetime.combine(value, datetime.time(tzinfo=UTC()))
+            if isinstance(value, datetime.datetime):
+                value = utc_to_string(value)
+            elif isinstance(value, bool):
+                value = value and 'true' or 'false'
+
+            if self.boost:
+                boost = u' boost=%s' % quoteattr(str(self.boost))
+            else:
+                boost = u''
+
+            return u'<field name=%s%s>%s</field>' % (quoteattr(self.name), boost, escape(unicode(value)))
+
+        raise AttributeError("'Field' object has no attribute '%s'" % name)
+    
+    def __setattr__(self, name, value):
+        if name == 'value':
+            if value == None:
+                raise ValueError("Field value cannot be None")
+        elif name == 'boost':
+            if value and not isinstance(value, float):
+                raise TypeError("Expecting a float for boost")
+        
+        object.__setattr__(self, name, value)
+
+    def __eq__(self, field):
+        return self.name == field.name and self.value == field.value and self.boost == self.boost
+
+    def __repr__(self):
+        return '<solr.Field name=%s, value=%s, boost=%s>' % (self.name, self.value[0:5], self.boost)
 
 # ===================================================================
 # Response objects
